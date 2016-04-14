@@ -389,11 +389,15 @@ MyApplet.prototype = {
     this.loadJsonAsync(this.weatherUrl(), function(json) {
       try {
         let weather = json.get_object_member('query').get_object_member('results').get_object_member('channel')
-        //test data are within the last 3 hours
-        let build = new Date(weather.get_string_member('lastBuildDate')
-            .replace('CET', '+0100')
-            .replace('CEST', '+0200'))
-        if (Date.now() - build.getTime() > 10800000) {
+        let created = new Date(json.get_object_member('query').get_string_member('created'))
+        let build = this.zonedDate(weather.get_string_member('lastBuildDate'), '+0000')
+        let diff = Math.ceil((build.getTime() - created.getTime()) / 60000)
+        let zone = diff >= 0 ? '+' : '-'
+        zone += (Math.floor(diff / 60) / 100).toString().split('.')[1] || '00'
+        zone += diff % 60 || '00'
+        let pub = this.zonedDate(weather.get_object_member('item').get_string_member('pubDate'), zone)
+        //test data are within the last 4 hours
+        if (Date.now() - pub.getTime() > 14400000) {
             this.jsonAttempts++
             nextBuild = new Date(nextBuild.getTime() + 30000 - this._refreshInterval * 60000)
             throw new Error('Outdated weather data: ' + build)
@@ -445,8 +449,8 @@ MyApplet.prototype = {
           this.set_applet_label('')
         }
 
-        let buildDay = this.localeDayNumeric(build.getDay())
-        this._currentWeatherBuildTime.text = buildDay + ' ' + build.getHours() + ':' + build.getMinutes()
+        let pubDay = this.localeDayNumeric(pub.getDay())
+        this._currentWeatherBuildTime.text = pubDay + ' ' + pub.toTimeString().match(/^\d\d:\d\d/)[0]
 
         this._currentWeatherSummary.text = comment
         this._currentWeatherTemperature.text = temperature + ' ' + this.unitToUnicode()
@@ -612,6 +616,8 @@ MyApplet.prototype = {
 
     if (parseInt(hh) < 10) // pad
       hh = '0' + hh
+    if (parseInt(mm) < 10)
+      mm = '0' + mm
 
     let beforeNoon = timeStr.substr(n - 2).toLowerCase() == 'am'
     if (beforeNoon) {
@@ -625,6 +631,12 @@ MyApplet.prototype = {
       return hh + ':' + mm
 
     return (parseInt(hh) + 12).toString() + ':' + mm
+  }
+
+, zonedDate: function (dateStr, zone) {
+    let date_split = dateStr.split(' ')
+        date_split.splice(-1, 1, zone)
+        return new Date(date_split.join(' '))
   }
 
 , destroyCurrentWeather: function destroyCurrentWeather() {
