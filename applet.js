@@ -44,7 +44,7 @@ const Util = imports.misc.util
 const UUID = "weather@mockturtl"
 const APPLET_ICON = "view-refresh-symbolic"
 const CMD_SETTINGS = "cinnamon-settings applets " + UUID
-const WOEID_URL = "http://edg3.co.uk/snippets/weather-location-codes/"
+const WOEID_URL = "http://woeid.rosselliot.co.nz"
 const CMD_WOEID_LOOKUP = "xdg-open " + WOEID_URL
 
 // Conversion Factors
@@ -59,7 +59,7 @@ const EN_DASH = '\u2013'
 
 // Query
 const QUERY_PARAMS = '?format=json&q=select '
-const QUERY_TABLE = 'feednormalizer where url="http://xml.weather.yahoo.com/forecastrss/'
+const QUERY_TABLE = 'weather.forecast'
 const QUERY_VIEW = '*'
 const QUERY_URL = 'http://query.yahooapis.com/v1/public/yql' + QUERY_PARAMS + QUERY_VIEW + ' from ' + QUERY_TABLE
 
@@ -144,12 +144,14 @@ const WeatherPressureUnits = {
   MMHG: 'mm Hg',
   INHG: 'in Hg',
   PA: 'Pa',
+  KPA: 'kPa',
   PSI: 'psi',
   ATM: 'atm',
   AT: 'at'
 }
 
 // Pressure conversion factors
+const WEATHER_CONV_KPA_IN_MBAR = 0.1
 const WEATHER_CONV_PA_IN_MBAR = 100
 const WEATHER_CONV_MMHG_IN_MBAR = 750.0615613e-3
 const WEATHER_CONV_INHG_IN_MBAR = 2.952998307e-2
@@ -158,6 +160,7 @@ const WEATHER_CONV_ATM_IN_MBAR = 0.986923169e-3
 const WEATHER_CONV_PSI_IN_MBAR = 14.5037738e-3
 
 const WEATHER_CONV_MBAR_IN_INHG = 3.3863886667e+1
+const WEATHER_CONV_KPA_IN_INHG = 3.386389
 const WEATHER_CONV_PA_IN_INHG = 3.386389e+3
 const WEATHER_CONV_MMHG_IN_INHG = 25.4
 const WEATHER_CONV_PSI_IN_INHG = 491.154152e-3
@@ -385,7 +388,7 @@ MyApplet.prototype = {
     //this.dumpKeys()
     this.loadJsonAsync(this.weatherUrl(), function(json) {
       try {
-        let weather = json.get_object_member('query').get_object_member('results').get_object_member('rss').get_object_member('channel')
+        let weather = json.get_object_member('query').get_object_member('results').get_object_member('channel')
         //test data are within the last 3 hours
         let build = new Date(weather.get_string_member('lastBuildDate')
             .replace('CET', '+0100')
@@ -543,11 +546,18 @@ MyApplet.prototype = {
             }
             pressure = Math.round(pressure)
             break
+          case WeatherPressureUnits.KPA:
+            if (this._temperatureUnit == WeatherUnits.CELSIUS) {
+              pressure = pressure * WEATHER_CONV_KPA_IN_MBAR
+            } else {
+              pressure = pressure * WEATHER_CONV_KPA_IN_INHG
+            }
+            pressure = parseFloat(pressure).toFixed(2)
+            break
         }
         this._currentWeatherPressure.text = pressure + ' ' + _(this._pressureUnit)
 
         // location is a button
-        this._currentWeatherLocation.style_class = STYLE_LOCATION_LINK
         this._currentWeatherLocation.url = weather.get_string_member('link')
         this._currentWeatherLocation.label = _(location)
 
@@ -610,7 +620,7 @@ MyApplet.prototype = {
 
       return hh + ':' + mm
     }
-    
+
     if (hh == '12') // 12 PM -> ok
       return hh + ':' + mm
 
@@ -659,17 +669,21 @@ MyApplet.prototype = {
 
     this._currentWeatherLocation = new St.Button({
       reactive: true,
-      label: _('Please wait')
+      label: _('Refresh')
     })
+
+    this._currentWeatherLocation.style_class = STYLE_LOCATION_LINK
 
     // link to the details page
     this._currentWeatherLocation.connect(SIGNAL_CLICKED, Lang.bind(this, function() {
-      if (this._currentWeatherLocation.url == null)
-        return
-      Gio.app_info_launch_default_for_uri(
-        this._currentWeatherLocation.url,
-        global.create_app_launch_context()
-      )
+      if (this._currentWeatherLocation.url == null) {
+        this.refreshWeather(false)
+      } else {
+        Gio.app_info_launch_default_for_uri(
+          this._currentWeatherLocation.url,
+          global.create_app_launch_context()
+        )
+      }
     }))
 
     let bb = new St.BoxLayout({
@@ -805,8 +819,8 @@ MyApplet.prototype = {
   }
 
 , weatherUrl: function weatherUrl() {
-    //let output = QUERY_URL + ' where location="' + this._woeid + '" and u="' + this.unitToUrl() + '"'
-    let output = QUERY_URL + this._woeid + '_' + this.unitToUrl() + '.xml"'
+    let output = QUERY_URL + ' where woeid="' + this._woeid + '" and u="' + this.unitToUrl() + '"'
+    //let output = QUERY_URL + this._woeid + '_' + this.unitToUrl() + '.xml"'
     return output
   }
 
@@ -1057,3 +1071,4 @@ function main(metadata, orientation, panelHeight, instanceId) {
   //log("v" + metadata.version + ", cinnamon " + Config.PACKAGE_VERSION)
   return new MyApplet(metadata, orientation, panelHeight, instanceId)
 }
+
